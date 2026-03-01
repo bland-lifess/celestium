@@ -1,0 +1,2671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Starfall</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ============================================================
+       DESIGN TOKENS — edit these to retheme the entire app
+       ============================================================ */
+    :root {
+      /* Backgrounds */
+      --bg:        #04050f;
+      --bg2:       #080b1a;
+      --bg3:       #0d1128;
+      --surface:   #0e1220;
+      --surface2:  #131828;
+
+      /* Borders */
+      --border:    rgba(100, 130, 200, 0.12);
+      --border2:   rgba(100, 130, 200, 0.22);
+
+      /* Text */
+      --text:      #c8d4e8;
+      --text2:     #6878a0;
+      --text3:     #3a4868;
+
+      /* Accent colours */
+      --accent:    #4a8fff;
+      --accent2:   #7b5fff;
+      --gold:      #ffd700;
+      --green:     #40d098;
+      --red:       #ff5060;
+
+      /* Tier colours (also used in JS CONFIG below) */
+      --common:    #c8d8e8;
+      --rare:      #4a9eff;
+      --epic:      #c060ff;
+      --legendary: #ffd700;
+
+      /* Typography */
+      --font-display: 'Cinzel Decorative', serif;   /* headings / logo */
+      --font-title:   'Cinzel', serif;               /* sub-headings    */
+      --font-body:    'DM Sans', sans-serif;         /* everything else */
+
+      /* Layout */
+      --nav-h:     64px;
+      --safe-bot:  env(safe-area-inset-bottom, 0px);
+    }
+
+
+    /* ============================================================
+       RESET & BASE
+       ============================================================ */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+    }
+
+    ::-webkit-scrollbar       { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+
+    /* ============================================================
+       APP SHELL — full-height flex column with bottom nav
+       ============================================================ */
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #screens {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Each screen sits absolutely inside #screens and fades in/out */
+    .screen {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: opacity 0.28s ease, transform 0.28s ease;
+      /* Leave room for the bottom nav */
+      padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 16px);
+    }
+
+    .screen.active {
+      opacity: 1;
+      pointer-events: all;
+      transform: translateY(0);
+    }
+
+
+    /* ============================================================
+       BOTTOM NAVIGATION
+       ============================================================ */
+    #nav {
+      height: calc(var(--nav-h) + var(--safe-bot));
+      padding-bottom: var(--safe-bot);
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: stretch;
+      position: relative;
+      z-index: 200;
+      flex-shrink: 0;
+      backdrop-filter: blur(20px);
+    }
+
+    .nav-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding-top: 8px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text3);
+      font-family: var(--font-body);
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .nav-btn.active        { color: var(--accent); }
+    .nav-btn svg           { width: 22px; height: 22px; stroke-width: 1.6; transition: transform 0.2s; }
+    .nav-btn.active svg    { transform: translateY(-1px); }
+    .nav-btn span          { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+
+    /* Red notification dot on the Quests tab */
+    .nav-pip {
+      position: absolute;
+      top: 8px;
+      right: calc(50% - 14px);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      border: 1.5px solid var(--surface);
+      display: none;
+    }
+    .nav-pip.show { display: block; }
+
+
+    /* ============================================================
+       SHARED COMPONENT STYLES
+       ============================================================ */
+
+    /* Page header row */
+    .page-header {
+      padding: 20px 20px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .page-title {
+      font-family: var(--font-title);
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      color: var(--text);
+    }
+
+    /* Generic buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-weight: 600;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+    }
+    .btn-primary              { background: var(--accent); color: #fff; }
+    .btn-primary:hover        { background: #3a7fff; transform: translateY(-1px); }
+    .btn-ghost                { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
+    .btn-ghost:hover          { border-color: var(--accent); color: var(--accent); }
+
+    /* Small coloured pill for tier names */
+    .tier-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      border: 1px solid;
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    /* Mutation tag pills — one class per mutation name */
+    .mut-Binary   { color: #00e5ff; border-color: #00e5ff; background: rgba(0,   229, 255, 0.06); }
+    .mut-Gigantism{ color: #ff9a3c; border-color: #ff9a3c; background: rgba(255, 154,  60, 0.06); }
+    .mut-Ringed   { color: #b8f0a0; border-color: #b8f0a0; background: rgba(184, 240, 160, 0.06); }
+    .mut-Void     { color: #cc80ff; border-color: #cc80ff; background: rgba(204, 128, 255, 0.06); }
+
+    /* Stardust currency chip */
+    .dust-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(255, 215, 0, 0.1);
+      border: 1px solid rgba(255, 215, 0, 0.25);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-family: var(--font-title);
+      font-size: 0.8rem;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+    }
+
+
+    /* ============================================================
+       HOME SCREEN
+       ============================================================ */
+    #screen-home { background: var(--bg); }
+
+    .home-hero {
+      position: relative;
+      height: 200px;
+      overflow: hidden;
+      background: linear-gradient(135deg, #0a0f2a 0%, #111830 40%, #0d0820 100%);
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Hero canvas for the animated star-canvas backdrop */
+    #hero-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .home-hero-content {
+      position: relative;
+      z-index: 2;
+      padding: 24px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      justify-content: flex-end;
+    }
+
+    .home-greeting {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 4px;
+    }
+
+    .home-name {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      color: var(--text);
+      margin-bottom: 10px;
+      text-shadow: 0 0 30px rgba(100, 150, 255, 0.4);
+    }
+
+    .home-stats-row { display: flex; gap: 8px; }
+
+    .home-stat {
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 6px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .home-stat-val { font-family: var(--font-title); font-size: 1rem; color: var(--text); }
+    .home-stat-lbl { font-size: 0.58rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text3); margin-top: 1px; }
+
+    .home-section { padding: 16px 20px 0; }
+
+    .home-section-title {
+      font-family: var(--font-title);
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    /* Decorative line after section titles */
+    .home-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* Recent activity feed */
+    .activity-list          { display: flex; flex-direction: column; gap: 8px; }
+    .activity-item          { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+    .activity-icon          { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+    .activity-info          { flex: 1; }
+    .activity-title         { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+    .activity-sub           { font-size: 0.7rem; color: var(--text2); margin-top: 1px; }
+    .activity-right         { font-family: var(--font-title); font-size: 0.75rem; }
+
+    /* Horizontal quest preview strip on Home */
+    .quest-strip                { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+    .quest-strip::-webkit-scrollbar { display: none; }
+
+    .quest-mini {
+      flex-shrink: 0;
+      width: 160px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .quest-mini:hover        { border-color: var(--accent); }
+    .quest-mini-title        { font-size: 0.75rem; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .quest-mini-bar          { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
+    .quest-mini-fill         { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.4s; }
+    .quest-mini-prog         { font-size: 0.62rem; color: var(--text2); }
+    .quest-mini-reward       { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 0.65rem; color: var(--gold); font-family: var(--font-title); }
+
+
+    /* ============================================================
+       PULL SCREEN
+       ============================================================ */
+    #screen-pull { display: flex; flex-direction: column; align-items: center; background: var(--bg); }
+
+    #pull-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 0;
+      flex-shrink: 0;
+    }
+
+    .pull-title { font-family: var(--font-display); font-size: 0.95rem; letter-spacing: 0.15em; color: var(--text2); }
+    .pull-cost  { display: flex; align-items: center; gap: 6px; font-family: var(--font-title); font-size: 0.8rem; color: var(--gold); }
+
+    /* The background Three.js canvas sits behind everything */
+    canvas#canvas-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+    /* Centre stage for the interactive star */
+    #pull-arena {
+      position: relative;
+      z-index: 10;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 0 20px;
+    }
+
+    /* Tappable star wrapper */
+    #star-wrap {
+      position: relative;
+      width: clamp(150px, 38vw, 240px);
+      height: clamp(150px, 38vw, 240px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #star-wrap.disabled { cursor: default; pointer-events: none; }
+
+    #star-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      border-radius: 50%;
+    }
+
+    /* SVG crack lines that flash on upgrade */
+    #crack-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    #crack-svg.show { opacity: 1; }
+
+    /* "X taps remaining" label */
+    .pull-tap-hint {
+      margin-top: 16px;
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text3);
+      transition: opacity 0.3s;
+    }
+
+    /* Progress pip dots */
+    #pips { display: flex; gap: 8px; margin-top: 12px; }
+
+    .pip {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      border: 1.5px solid var(--text3);
+      background: transparent;
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .pip.used { background: var(--accent); border-color: var(--accent); transform: scale(1.2); }
+
+    /* Tier name shown after first tap */
+    #tier-label {
+      font-family: var(--font-display);
+      font-size: clamp(0.75rem, 2vw, 1rem);
+      letter-spacing: 0.2em;
+      margin-top: 10px;
+      text-transform: uppercase;
+      opacity: 0;
+      transition: opacity 0.4s, color 0.4s, text-shadow 0.4s;
+    }
+
+    /* Mutation name pills that appear mid-pull */
+    #mutations-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 8px; max-width: 280px; }
+
+    .mut-badge {
+      font-size: 0.58rem;
+      letter-spacing: 0.12em;
+      padding: 2px 8px;
+      border-radius: 16px;
+      border: 1px solid;
+      text-transform: uppercase;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.4s, transform 0.4s;
+    }
+    .mut-badge.show { opacity: 1; transform: translateY(0); }
+
+    /* "New Pull" button — only shown after reveal */
+    #pull-reset-btn {
+      display: none;
+      margin-top: 16px;
+      padding: 9px 28px;
+      font-family: var(--font-title);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text2);
+      background: transparent;
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      z-index: 20;
+    }
+    #pull-reset-btn:hover  { color: var(--text); border-color: var(--accent); }
+    #pull-reset-btn.show   { display: block; }
+
+
+    /* ============================================================
+       COLLECTION SCREEN
+       ============================================================ */
+    #screen-collection { background: var(--bg); }
+
+    /* Tier filter chips */
+    .filter-bar                     { display: flex; gap: 6px; padding: 12px 20px; overflow-x: auto; }
+    .filter-bar::-webkit-scrollbar  { display: none; }
+
+    .filter-chip {
+      flex-shrink: 0;
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      font-family: var(--font-body);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    /* "All" active state */
+    .filter-chip.active               { background: var(--accent); color: #fff; border-color: var(--accent); }
+    /* Tier-specific active states */
+    .filter-chip.f-common.active      { background: rgba(200,216,232,0.2); color: var(--common);    border-color: var(--common); }
+    .filter-chip.f-rare.active        { background: rgba( 74,158,255,0.2); color: var(--rare);      border-color: var(--rare); }
+    .filter-chip.f-epic.active        { background: rgba(192, 96,255,0.2); color: var(--epic);      border-color: var(--epic); }
+    .filter-chip.f-legendary.active   { background: rgba(255,215,  0,0.15);color: var(--legendary); border-color: var(--legendary); }
+
+    .collection-sort  { display: flex; align-items: center; justify-content: space-between; padding: 0 20px 10px; }
+    .sort-label       { font-size: 0.7rem; color: var(--text3); letter-spacing: 0.08em; }
+
+    .sort-select {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text2);
+      font-family: var(--font-body);
+      font-size: 0.72rem;
+      padding: 4px 8px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    /* Responsive card grid */
+    .stars-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 16px; }
+    @media (min-width: 480px) { .stars-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (min-width: 640px) { .stars-grid { grid-template-columns: repeat(5, 1fr); } }
+
+    /* Individual star card */
+    .star-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s;
+      aspect-ratio: 0.75;
+      display: flex;
+      flex-direction: column;
+    }
+    .star-card:hover          { transform: translateY(-2px); border-color: var(--border2); }
+    .star-card.legendary-card { border-color: rgba(255, 215,   0, 0.3); }
+    .star-card.epic-card      { border-color: rgba(192,  96, 255, 0.2); }
+    .star-card.rare-card      { border-color: rgba( 74, 158, 255, 0.2); }
+
+    .star-card-art {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .star-card-glow  { position: absolute; inset: 0; opacity: 0.15; }
+    .star-card-emoji { position: relative; z-index: 1; filter: drop-shadow(0 0 8px currentColor); }
+
+    .star-card-info    { padding: 8px 8px 6px; }
+    .star-card-num     { font-size: 0.58rem; color: var(--text3); font-family: var(--font-title); letter-spacing: 0.1em; }
+    .star-card-tier    { font-size: 0.62rem; font-weight: 600; margin-top: 1px; }
+    .star-card-muts    { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
+    .star-card-mut-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+    .empty-collection   { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 12px; }
+    .empty-collection svg { opacity: 0.15; width: 60px; height: 60px; }
+    .empty-collection p { font-size: 0.8rem; color: var(--text3); text-align: center; letter-spacing: 0.08em; }
+
+
+    /* ============================================================
+       STAR DETAIL MODAL (bottom sheet)
+       ============================================================ */
+    #star-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+    #star-modal.open { opacity: 1; pointer-events: all; }
+
+    #star-modal-bg {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+    }
+
+    #star-modal-sheet {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      border-radius: 20px 20px 0 0;
+      border: 1px solid var(--border2);
+      border-bottom: none;
+      padding: 20px;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.32, 1, 0.58, 1);
+    }
+    #star-modal.open #star-modal-sheet { transform: translateY(0); }
+
+    .modal-handle    { width: 36px; height: 4px; border-radius: 2px; background: var(--border2); margin: 0 auto 16px; }
+    .modal-star-art  { width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 16px; background: var(--surface2); border: 1px solid var(--border2); }
+    .modal-title     { font-family: var(--font-title); font-size: 1.1rem; letter-spacing: 0.1em; text-align: center; }
+    .modal-sub       { font-size: 0.7rem; color: var(--text2); text-align: center; margin-top: 4px; }
+
+    .modal-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+    .modal-stat  { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+    .modal-stat-label { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text3); }
+    .modal-stat-value { font-family: var(--font-title); font-size: 0.9rem; color: var(--text); margin-top: 3px; }
+
+    .modal-muts    { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+    .modal-btn-row { display: flex; gap: 8px; margin-top: 16px; }
+
+
+    /* ============================================================
+       QUESTS SCREEN
+       ============================================================ */
+    #screen-quests { background: var(--bg); }
+
+    /* Daily / Weekly / Lifetime tab switcher */
+    .quest-tabs { display: flex; padding: 12px 20px 0; border-bottom: 1px solid var(--border); }
+
+    .quest-tab {
+      padding: 8px 20px;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      color: var(--text3);
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      font-weight: 600;
+    }
+    .quest-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .quests-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    .quest-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      transition: border-color 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .quest-item.completed { border-color: rgba(64, 208, 152, 0.3); }
+    .quest-item.claimable { border-color: rgba(74, 143, 255, 0.4); cursor: pointer; }
+    /* Coloured left accent bar */
+    .quest-item.completed::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green); }
+    .quest-item.claimable::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+
+    .quest-header { display: flex; align-items: flex-start; gap: 12px; }
+
+    .quest-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+
+    .quest-info   { flex: 1; }
+    .quest-title  { font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+    .quest-desc   { font-size: 0.72rem; color: var(--text2); }
+    .quest-reward { display: flex; align-items: center; gap: 4px; font-family: var(--font-title); font-size: 0.72rem; color: var(--gold); margin-top: 2px; }
+
+    .quest-progress-wrap { margin-top: 10px; }
+    .quest-prog-bar  { height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+    .quest-prog-fill { height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(0.34, 1.2, 0.64, 1); }
+    .quest-prog-text { display: flex; justify-content: space-between; margin-top: 4px; }
+    .quest-prog-nums { font-size: 0.65rem; color: var(--text2); }
+    .quest-prog-pct  { font-size: 0.65rem; color: var(--text3); }
+
+    .claim-btn {
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px;
+      border-radius: 8px;
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      font-family: var(--font-body);
+      font-weight: 600;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .claim-btn:hover { background: #3a7fff; }
+
+    .quest-badge-complete {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--green);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* XP progress banner at top of Quests */
+    .xp-banner { margin: 12px 16px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+    .xp-row    { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .xp-level  { font-family: var(--font-title); font-size: 0.9rem; color: var(--text); }
+    .xp-next   { font-size: 0.68rem; color: var(--text2); }
+    .xp-bar-outer { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+    .xp-bar-fill  { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent2), var(--accent)); transition: width 0.8s; }
+
+
+    /* ============================================================
+       PROFILE SCREEN
+       ============================================================ */
+    #screen-profile { background: var(--bg); }
+
+    .profile-hero {
+      background: linear-gradient(160deg, #0a0f28, #10082a);
+      border-bottom: 1px solid var(--border);
+      padding: 28px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .profile-avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 2px solid var(--border2);
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2rem;
+      position: relative;
+    }
+
+    /* Gradient ring around avatar */
+    .profile-avatar-ring {
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background: linear-gradient(135deg, var(--accent2), var(--accent)) border-box;
+      -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: destination-out;
+      mask-composite: exclude;
+    }
+
+    .profile-name  { font-family: var(--font-title); font-size: 1.2rem; letter-spacing: 0.1em; }
+    .profile-since { font-size: 0.65rem; color: var(--text3); letter-spacing: 0.12em; }
+
+    .profile-dust-big {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 215, 0, 0.08);
+      border: 1px solid rgba(255, 215, 0, 0.2);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-family: var(--font-title);
+      font-size: 1rem;
+      color: var(--gold);
+    }
+
+    .profile-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 16px; }
+
+    .profile-stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 8px; text-align: center; }
+    .profile-stat-val { font-family: var(--font-title); font-size: 1.1rem; color: var(--text); }
+    .profile-stat-lbl { font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); margin-top: 3px; }
+
+    .achievements-section { padding: 0 16px 0; }
+
+    .achievements-title {
+      font-family: var(--font-title);
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .achievements-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .achievement-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .achievement-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      transition: border-color 0.2s;
+    }
+    .achievement-item.unlocked { border-color: rgba(255, 215, 0, 0.25); }
+    .achievement-icon { font-size: 1.3rem; flex-shrink: 0; }
+    .achievement-info { flex: 1; }
+    .achievement-name { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+    .achievement-desc { font-size: 0.68rem; color: var(--text2); margin-top: 1px; }
+    .achievement-lock { font-size: 0.7rem; color: var(--text3); }
+
+
+    /* ============================================================
+       REVEAL OVERLAY (full-screen after final tap)
+       ============================================================ */
+    #reveal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, #080c1c, #02030a);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s;
+    }
+    #reveal-overlay.open { opacity: 1; pointer-events: all; }
+
+    #reveal-star-wrap {
+      width: clamp(180px, 42vw, 300px);
+      height: clamp(180px, 42vw, 300px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #reveal-canvas { width: 100% !important; height: 100% !important; }
+
+    #reveal-tier-text {
+      font-family: var(--font-display);
+      font-size: clamp(1.2rem, 4vw, 2rem);
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      margin-top: 16px;
+    }
+
+    #reveal-muts    { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 8px; max-width: 320px; }
+    #reveal-subtext { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text3); margin-top: 6px; }
+
+    #reveal-close-btn {
+      margin-top: 20px;
+      padding: 10px 32px;
+      font-family: var(--font-title);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text2);
+      background: transparent;
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #reveal-close-btn:hover { color: var(--text); border-color: var(--accent); }
+
+
+    /* ============================================================
+       TOAST NOTIFICATION
+       ============================================================ */
+    #toast {
+      position: fixed;
+      bottom: calc(var(--nav-h) + var(--safe-bot) + 12px);
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      z-index: 300;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+
+    /* ============================================================
+       MISC UTILITIES
+       ============================================================ */
+
+    /* Screen-shake on "Stay" taps */
+    @keyframes shake {
+      0%, 100% { transform: translate(0, 0); }
+      15%       { transform: translate(-4px, -2px); }
+      30%       { transform: translate( 3px,  2px); }
+      50%       { transform: translate(-3px,  1px); }
+      70%       { transform: translate( 2px, -2px); }
+      85%       { transform: translate(-1px,  1px); }
+    }
+    .shake { animation: shake 0.4s ease-out; }
+
+    /* White flash overlay used in the supernova reveal */
+    #flash { position: fixed; inset: 0; z-index: 350; background: white; opacity: 0; pointer-events: none; transition: opacity 0.08s; }
+
+    /* Subtle film-grain texture over everything */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.35;
+      mix-blend-mode: overlay;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Global Three.js starfield background (z-index: 0) -->
+  <canvas id="canvas-bg"></canvas>
+
+  <!-- White supernova flash overlay -->
+  <div id="flash"></div>
+
+  <!-- Toast notification bar -->
+  <div id="toast">
+    <span id="toast-icon">✦</span>
+    <span id="toast-msg"></span>
+  </div>
+
+
+  <!-- ============================================================
+       APP SHELL
+       ============================================================ -->
+  <div id="app">
+    <div id="screens">
+
+      <!-- ── HOME ───────────────────────────────────────────── -->
+      <div class="screen active" id="screen-home">
+
+        <div class="home-hero">
+          <canvas id="hero-canvas"></canvas>
+          <div class="home-hero-content">
+            <div class="home-greeting">Welcome back</div>
+            <div class="home-name" id="profile-display-name">Starseeker</div>
+            <div class="home-stats-row">
+              <div class="home-stat">
+                <div class="home-stat-val" id="stat-total">0</div>
+                <div class="home-stat-lbl">Stars</div>
+              </div>
+              <div class="home-stat">
+                <div class="home-stat-val" id="stat-legendary">0</div>
+                <div class="home-stat-lbl">Legendary</div>
+              </div>
+              <div class="home-stat" style="background:rgba(255,215,0,0.08); border-color:rgba(255,215,0,0.2);">
+                <div class="home-stat-val" id="stat-dust" style="color:var(--gold);">100</div>
+                <div class="home-stat-lbl" style="color:rgba(255,215,0,0.6);">Stardust</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="home-section" style="margin-top:16px;">
+          <div class="home-section-title">Active Quests</div>
+          <div class="quest-strip" id="home-quest-strip"></div>
+        </div>
+
+        <div class="home-section" style="margin-top:16px; padding-bottom:4px;">
+          <div class="home-section-title">Recent Activity</div>
+          <div class="activity-list" id="activity-list">
+            <div class="activity-item" style="opacity:0.4; justify-content:center;">
+              <span style="font-size:0.75rem; color:var(--text3); letter-spacing:0.1em;">
+                No activity yet — do your first pull!
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /screen-home -->
+
+
+      <!-- ── PULL ───────────────────────────────────────────── -->
+      <div class="screen" id="screen-pull">
+
+        <div id="pull-header">
+          <div class="pull-title">Starfall Pull</div>
+          <div class="pull-cost">✦ <span id="pull-cost-display">10</span> Stardust</div>
+        </div>
+
+        <div id="pull-arena">
+
+          <!-- Interactive Three.js star -->
+          <div id="star-wrap">
+            <canvas id="star-canvas"></canvas>
+            <!-- SVG crack lines flash briefly on tier upgrades -->
+            <svg id="crack-svg" viewBox="0 0 200 200" fill="none">
+              <path id="crack1" d="" stroke="white" stroke-width="1.5" opacity="0.7"/>
+              <path id="crack2" d="" stroke="white" stroke-width="1"   opacity="0.5"/>
+              <path id="crack3" d="" stroke="white" stroke-width="0.8" opacity="0.4"/>
+            </svg>
+          </div>
+
+          <div class="pull-tap-hint" id="tap-hint">Tap to begin</div>
+
+          <div id="pips">
+            <div class="pip" id="pip0"></div>
+            <div class="pip" id="pip1"></div>
+            <div class="pip" id="pip2"></div>
+            <div class="pip" id="pip3"></div>
+          </div>
+
+          <div id="tier-label"></div>
+          <div id="mutations-row"></div>
+
+          <button id="pull-reset-btn" onclick="resetPull()">✦ New Pull</button>
+
+        </div>
+      </div><!-- /screen-pull -->
+
+
+      <!-- ── COLLECTION ─────────────────────────────────────── -->
+      <div class="screen" id="screen-collection">
+
+        <div class="page-header">
+          <div class="page-title">Collection</div>
+          <div class="dust-chip">✦ <span id="coll-dust">0</span></div>
+        </div>
+
+        <div class="filter-bar">
+          <div class="filter-chip active"       data-filter="All"       onclick="setFilter('All',this)">All</div>
+          <div class="filter-chip f-legendary"  data-filter="Legendary" onclick="setFilter('Legendary',this)">⭐ Legendary</div>
+          <div class="filter-chip f-epic"       data-filter="Epic"      onclick="setFilter('Epic',this)">Epic</div>
+          <div class="filter-chip f-rare"       data-filter="Rare"      onclick="setFilter('Rare',this)">Rare</div>
+          <div class="filter-chip f-common"     data-filter="Common"    onclick="setFilter('Common',this)">Common</div>
+        </div>
+
+        <div class="collection-sort">
+          <span class="sort-label" id="coll-count">0 stars</span>
+          <select class="sort-select" id="sort-select" onchange="renderCollection()">
+            <option value="newest">Newest</option>
+            <option value="tier">Tier ↑</option>
+            <option value="tier-desc">Tier ↓</option>
+            <option value="mutations">Most Mutations</option>
+          </select>
+        </div>
+
+        <div class="stars-grid" id="stars-grid"></div>
+
+      </div><!-- /screen-collection -->
+
+
+      <!-- ── QUESTS ──────────────────────────────────────────── -->
+      <div class="screen" id="screen-quests">
+
+        <div class="page-header"><div class="page-title">Quests</div></div>
+
+        <div class="xp-banner">
+          <div class="xp-row">
+            <div class="xp-level">Level <span id="xp-level-num">1</span></div>
+            <div class="xp-next"><span id="xp-curr">0</span> / <span id="xp-max">100</span> XP</div>
+          </div>
+          <div class="xp-bar-outer">
+            <div class="xp-bar-fill" id="xp-bar-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <div class="quest-tabs">
+          <div class="quest-tab active" onclick="setQuestTab('daily',this)">Daily</div>
+          <div class="quest-tab"        onclick="setQuestTab('weekly',this)">Weekly</div>
+          <div class="quest-tab"        onclick="setQuestTab('lifetime',this)">Lifetime</div>
+        </div>
+
+        <div class="quests-list" id="quests-list"></div>
+
+      </div><!-- /screen-quests -->
+
+
+      <!-- ── PROFILE ─────────────────────────────────────────── -->
+      <div class="screen" id="screen-profile">
+
+        <div class="profile-hero">
+          <div class="profile-avatar">
+            <div class="profile-avatar-ring"></div>
+            <span id="profile-avatar-emoji">🌟</span>
+          </div>
+          <div class="profile-name"  id="profile-name-display">Starseeker</div>
+          <div class="profile-since" id="profile-since">
+            Explorer · Level <span id="profile-level">1</span>
+          </div>
+          <div class="profile-dust-big">✦ <span id="profile-dust-big">100</span> Stardust</div>
+        </div>
+
+        <div class="profile-stats-grid">
+          <div class="profile-stat-box"><div class="profile-stat-val" id="ps-total">0</div><div class="profile-stat-lbl">Total Pulls</div></div>
+          <div class="profile-stat-box"><div class="profile-stat-val" id="ps-leg">0</div><div class="profile-stat-lbl">Legendary</div></div>
+          <div class="profile-stat-box"><div class="profile-stat-val" id="ps-mut">0</div><div class="profile-stat-lbl">Mutations</div></div>
+          <div class="profile-stat-box"><div class="profile-stat-val" id="ps-epic">0</div><div class="profile-stat-lbl">Epic</div></div>
+          <div class="profile-stat-box"><div class="profile-stat-val" id="ps-rare">0</div><div class="profile-stat-lbl">Rare</div></div>
+          <div class="profile-stat-box"><div class="profile-stat-val" id="ps-quests">0</div><div class="profile-stat-lbl">Quests Done</div></div>
+        </div>
+
+        <div class="achievements-section">
+          <div class="achievements-title">Achievements</div>
+          <div class="achievement-list" id="achievement-list"></div>
+        </div>
+        <div style="height:16px;"></div>
+
+      </div><!-- /screen-profile -->
+
+    </div><!-- /screens -->
+
+
+    <!-- ── BOTTOM NAV ──────────────────────────────────────── -->
+    <nav id="nav">
+      <button class="nav-btn active" onclick="goTo('home',this)"       data-screen="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="nav-btn" onclick="goTo('pull',this)"              data-screen="pull">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>Pull</span>
+      </button>
+      <button class="nav-btn" onclick="goTo('collection',this)"        data-screen="collection">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Collection</span>
+      </button>
+      <button class="nav-btn" onclick="goTo('quests',this)"            data-screen="quests">
+        <div class="nav-pip" id="quest-pip"></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span>Quests</span>
+      </button>
+      <button class="nav-btn" onclick="goTo('profile',this)"           data-screen="profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Profile</span>
+      </button>
+    </nav>
+
+  </div><!-- /app -->
+
+
+  <!-- ── STAR DETAIL MODAL ──────────────────────────────────── -->
+  <div id="star-modal">
+    <div id="star-modal-bg" onclick="closeStarModal()"></div>
+    <div id="star-modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-star-art"  id="modal-art">🌟</div>
+      <div class="modal-title"     id="modal-title">Star #001</div>
+      <div class="modal-sub"       id="modal-sub">Common · No Mutations</div>
+      <div class="modal-stats">
+        <div class="modal-stat"><div class="modal-stat-label">Tier</div>    <div class="modal-stat-value" id="modal-stat-tier">Common</div></div>
+        <div class="modal-stat"><div class="modal-stat-label">ID</div>      <div class="modal-stat-value" id="modal-stat-id">#001</div></div>
+        <div class="modal-stat"><div class="modal-stat-label">Mutations</div><div class="modal-stat-value" id="modal-stat-muts">0</div></div>
+        <div class="modal-stat"><div class="modal-stat-label">Obtained</div><div class="modal-stat-value" id="modal-stat-date">Today</div></div>
+      </div>
+      <div class="modal-muts" id="modal-muts-row"></div>
+      <div class="modal-btn-row">
+        <button class="btn btn-ghost" style="flex:1" onclick="closeStarModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── REVEAL OVERLAY ─────────────────────────────────────── -->
+  <div id="reveal-overlay">
+    <div id="reveal-star-wrap">
+      <canvas id="reveal-canvas"></canvas>
+    </div>
+    <div id="reveal-tier-text"></div>
+    <div id="reveal-muts"></div>
+    <div id="reveal-subtext">Starfall Artifact Discovered</div>
+    <button id="reveal-close-btn" onclick="closeReveal()">✦ Add to Collection</button>
+  </div>
+
+
+  <!-- ============================================================
+       JAVASCRIPT
+       ============================================================ -->
+  <script>
+
+    /* ============================================================
+       ██████╗ ██████╗ ███╗   ██╗███████╗██╗ ██████╗
+      ██╔════╝██╔═══██╗████╗  ██║██╔════╝██║██╔════╝
+      ██║     ██║   ██║██╔██╗ ██║█████╗  ██║██║  ███╗
+      ██║     ██║   ██║██║╚██╗██║██╔══╝  ██║██║   ██║
+      ╚██████╗╚██████╔╝██║ ╚████║██║     ██║╚██████╔╝
+       ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝     ╚═╝ ╚═════╝
+
+      Everything below this block is customisable here.
+      You rarely need to touch the code further down.
+       ============================================================ */
+
+    const CONFIG = {
+
+      /* ----------------------------------------------------------
+         PULL MECHANICS
+         ---------------------------------------------------------- */
+      pull: {
+        cost:           10,    // Stardust spent per pull
+        totalTaps:       4,    // How many taps before forced reveal
+        mutationChance: 0.05,  // Probability of a mutation on each tap (0–1)
+      },
+
+      /* ----------------------------------------------------------
+         TIERS
+         Each tier needs:
+           name         – display string (must be unique)
+           color        – hex string used for glow and UI accents
+           glowRgb      – "R,G,B" used inside rgba() calls
+           cardGradient – CSS gradient for collection card background
+           emoji        – icon shown in the collection grid and activity log
+           upgradeChance – probability (0–1) of advancing to next tier on a tap
+                           (the final tier — Legendary — has no upgradeChance)
+           rainbow      – if true, the star cycles through all hues continuously
+           dustReward   – Stardust awarded to player on reveal
+           xpReward     – XP awarded to player on reveal
+         ---------------------------------------------------------- */
+      tiers: [
+        {
+          name:          'Common',
+          color:         '#c8d8e8',
+          glowRgb:       '200,216,232',
+          cardGradient:  'linear-gradient(135deg, #1a2030, #0d1520)',
+          emoji:         '⬡',
+          upgradeChance: 0.70,
+          rainbow:       false,
+          dustReward:    2,
+          xpReward:      10,
+        },
+        {
+          name:          'Rare',
+          color:         '#4a9eff',
+          glowRgb:       '74,158,255',
+          cardGradient:  'linear-gradient(135deg, #0a1830, #051220)',
+          emoji:         '◆',
+          upgradeChance: 0.40,
+          rainbow:       false,
+          dustReward:    5,
+          xpReward:      20,
+        },
+        {
+          name:          'Epic',
+          color:         '#c060ff',
+          glowRgb:       '192,96,255',
+          cardGradient:  'linear-gradient(135deg, #18082a, #0d0520)',
+          emoji:         '✦',
+          upgradeChance: 0.15,
+          rainbow:       false,
+          dustReward:    12,
+          xpReward:      40,
+        },
+        {
+          name:          'Legendary',
+          color:         '#ffd700',
+          glowRgb:       '255,215,0',
+          cardGradient:  'linear-gradient(135deg, #1a1200, #100a00)',
+          emoji:         '★',
+          upgradeChance: 0,     // No upgrade from Legendary — it's the ceiling
+          rainbow:       true,  // Cycles through all hues on the 3D star
+          dustReward:    30,
+          xpReward:      100,
+        },
+      ],
+
+      /* ----------------------------------------------------------
+         MUTATIONS
+         Each mutation needs:
+           name      – display string (also used as the CSS class suffix)
+           color     – hex colour for its badge
+           dotColor  – colour of the tiny dot shown in the collection grid
+                       (usually the same as color)
+         ---------------------------------------------------------- */
+      mutations: [
+        { name: 'Binary',    color: '#00e5ff', dotColor: '#00e5ff' },
+        { name: 'Gigantism', color: '#ff9a3c', dotColor: '#ff9a3c' },
+        { name: 'Ringed',    color: '#b8f0a0', dotColor: '#b8f0a0' },
+        { name: 'Void',      color: '#cc80ff', dotColor: '#cc80ff' },
+      ],
+
+      /* ----------------------------------------------------------
+         CURRENCY & PROGRESSION
+         ---------------------------------------------------------- */
+      economy: {
+        startingDust:     100,   // Stardust given to a brand-new player
+        dustPerMutation:    3,   // Bonus Stardust per mutation on reveal
+        xpPerMutation:     10,   // Bonus XP per mutation on reveal
+        xpLevelBase:      100,   // XP required for Level 2
+        xpLevelGrowth:    1.30,  // Multiplier applied to XP cap each level-up
+        xpLevelGrowthAdd:  20,   // Flat addend applied to XP cap each level-up
+      },
+
+      /* ----------------------------------------------------------
+         QUEST DEFINITIONS
+         trigger values:
+           'pull'       – fires once per completed pull
+           'mutation'   – fires once per mutation collected in a pull
+           'legendary'  – fires when a Legendary star is revealed
+           'epic_plus'  – fires when Epic or Legendary is revealed
+           'rare_plus'  – fires when Rare / Epic / Legendary is revealed
+         ---------------------------------------------------------- */
+      quests: [
+        // ── Daily ─────────────────────────────────────────────
+        { id:'d1', type:'daily',    icon:'⭐', title:'First Light',    desc:'Complete 1 pull today',              goal:1,  trigger:'pull',       reward:15,  xp:20  },
+        { id:'d2', type:'daily',    icon:'✨', title:'Constellation',  desc:'Complete 3 pulls today',             goal:3,  trigger:'pull',       reward:30,  xp:35  },
+        { id:'d3', type:'daily',    icon:'🔮', title:'Mutation Seeker',desc:'Collect a mutation today',           goal:1,  trigger:'mutation',   reward:20,  xp:25  },
+        { id:'d4', type:'daily',    icon:'💜', title:'Epic Reach',     desc:'Obtain an Epic or higher star',      goal:1,  trigger:'epic_plus',  reward:25,  xp:30  },
+        // ── Weekly ────────────────────────────────────────────
+        { id:'w1', type:'weekly',   icon:'🌌', title:'Starburst',      desc:'Complete 15 pulls this week',        goal:15, trigger:'pull',       reward:80,  xp:100 },
+        { id:'w2', type:'weekly',   icon:'⚡', title:'Mutant Collector',desc:'Collect 5 mutations this week',     goal:5,  trigger:'mutation',   reward:60,  xp:75  },
+        { id:'w3', type:'weekly',   icon:'👑', title:'Legendary Hunter',desc:'Obtain a Legendary star',           goal:1,  trigger:'legendary',  reward:120, xp:150 },
+        { id:'w4', type:'weekly',   icon:'🎯', title:'Rare Finder',    desc:'Collect 5 Rare or higher stars',    goal:5,  trigger:'rare_plus',  reward:50,  xp:60  },
+        // ── Lifetime ──────────────────────────────────────────
+        { id:'l1', type:'lifetime', icon:'🏆', title:'First Star',     desc:'Complete your first pull ever',      goal:1,  trigger:'pull',       reward:50,  xp:50  },
+        { id:'l2', type:'lifetime', icon:'💫', title:'Collector',      desc:'Collect 25 stars total',             goal:25, trigger:'pull',       reward:100, xp:120 },
+        { id:'l3', type:'lifetime', icon:'🌟', title:'Star Hoarder',   desc:'Collect 100 stars total',            goal:100,trigger:'pull',       reward:300, xp:400 },
+        { id:'l4', type:'lifetime', icon:'🔱', title:'Legendary Legacy',desc:'Obtain 3 Legendary stars',          goal:3,  trigger:'legendary',  reward:200, xp:250 },
+        { id:'l5', type:'lifetime', icon:'🧬', title:'Genetic Freak',  desc:'Collect 10 total mutations',         goal:10, trigger:'mutation',   reward:150, xp:180 },
+      ],
+
+      /* ----------------------------------------------------------
+         ACHIEVEMENTS
+         condition() receives the live save object G as its argument.
+         ---------------------------------------------------------- */
+      achievements: [
+        { id:'a1', icon:'⭐', name:'First Star',     desc:'Complete your first pull',              condition: G => G.stats.total    >=  1 },
+        { id:'a2', icon:'👑', name:'Legendary',      desc:'Obtain a Legendary star',               condition: G => G.stats.legendary >=  1 },
+        { id:'a3', icon:'💎', name:'Epic Collector', desc:'Obtain 5 Epic stars',                   condition: G => G.stats.epic      >=  5 },
+        { id:'a4', icon:'🧬', name:'Mutant',         desc:'Collect 5 mutations',                   condition: G => G.stats.mutations  >=  5 },
+        { id:'a5', icon:'🌌', name:'Constellation',  desc:'Collect 50 stars',                      condition: G => G.stats.total    >= 50 },
+        { id:'a6', icon:'🏆', name:'Champion',       desc:'Reach Level 10',                        condition: G => G.level           >= 10 },
+        { id:'a7', icon:'🔮', name:'Void Walker',    desc:'Obtain a Void mutation',                condition: G => G.collection.some(s => s.mutations.includes('Void')) },
+        { id:'a8', icon:'🌟', name:'Quadruple!',     desc:'Get all 4 mutations on one star',       condition: G => G.collection.some(s => s.mutations.length === 4) },
+      ],
+
+      /* ----------------------------------------------------------
+         VISUAL — THREE.JS STAR
+         ---------------------------------------------------------- */
+      star: {
+        coreRadius:           0.52,   // Radius of the inner icosahedron
+        coreDetail:           2,      // Geometry subdivision level (higher = smoother)
+        spikeRadius:          0.72,   // Base radius of the outer spiked shell
+        spikeMaxJitter:       0.32,   // How spiky the shell gets (0 = smooth ball)
+        coreEmissiveIntensity:1.8,    // Base brightness of the core glow
+        spikeOpacity:         0.50,   // Opacity of the outer shell
+        glowSpriteScale:      2.2,    // Size of the sprite glow halo
+        floatAmplitude:       0.04,   // How far the star bobs up and down
+        floatSpeed:           0.9,    // How fast it bobs (radians/sec)
+        rotationBaseSpeed:    0.004,  // Base rotation speed (radians/sec)
+        rainbowCycleSpeed:    0.8,    // How fast rainbow hue cycles (turns/sec)
+        ringParticleCount:    120,    // # of particles in the Legendary ring
+        ringRadius:           1.0,    // Distance of ring particles from centre
+        ringRotationSpeed:    0.6,    // How fast the ring spins (radians/sec)
+        // Pulse VFX (on every tap)
+        pulseDecayRate:       2.2,    // How quickly the pulse fades
+        pulseScaleBoost:      0.26,   // Peak extra scale on pulse
+        pulseEmissiveBoost:   2.2,    // Peak extra emissive intensity on pulse
+        // Flicker VFX (mutation hint)
+        flickerDecayRate:     1.6,    // How quickly the flicker fades
+        flickerFrequency:     8,      // Hz of the flicker oscillation
+      },
+
+      /* ----------------------------------------------------------
+         VISUAL — BACKGROUND STARFIELD
+         ---------------------------------------------------------- */
+      background: {
+        starCount:       1600,
+        starFieldSize:   2000,  // Width/height of the field in world units
+        starMaxSize:     2.0,   // Maximum rendered point size
+        starMinSize:     0.3,
+        starOpacity:     0.65,
+        driftAmplitudeX: 12,    // How far the camera drifts left-right
+        driftAmplitudeY: 8,     // How far the camera drifts up-down
+        driftSpeedX:     0.0001,
+        driftSpeedY:     0.00008,
+      },
+
+    }; // end CONFIG
+
+
+    /* ============================================================
+       ──────────────────────────────────────────────────────────
+       EVERYTHING BELOW THIS LINE IS ENGINE CODE.
+       You generally won't need to edit anything below here —
+       edit CONFIG above instead.
+       ──────────────────────────────────────────────────────────
+       ============================================================ */
+
+
+    /* ============================================================
+       DERIVED LOOKUP TABLES
+       Build quick-access maps from CONFIG arrays so the rest of
+       the code can write  TIER_MAP['Rare'].color  etc.
+       ============================================================ */
+
+    // Map tier name → tier object
+    const TIER_MAP = Object.fromEntries(
+      CONFIG.tiers.map(t => [t.name, t])
+    );
+
+    // Ordered list of tier names  ['Common','Rare','Epic','Legendary']
+    const TIER_NAMES = CONFIG.tiers.map(t => t.name);
+
+    // Map mutation name → mutation object
+    const MUT_MAP = Object.fromEntries(
+      CONFIG.mutations.map(m => [m.name, m])
+    );
+
+
+    /* ============================================================
+       SAVE / LOAD  (localStorage)
+       ============================================================ */
+
+    const SAVE_KEY = 'starfall_save_v3';
+
+    /** Build a brand-new save for a first-time player. */
+    function buildDefaultSave() {
+      return {
+        stardust:    CONFIG.economy.startingDust,
+        collection:  [],
+        nextId:      1,
+        level:       1,
+        xp:          0,
+        xpMax:       CONFIG.economy.xpLevelBase,
+        stats: {
+          total:     0,
+          mutations: 0,
+          questsDone:0,
+          // Per-tier counters are added dynamically using tier.name.toLowerCase()
+        },
+        activity:    [],
+        quests:      buildQuestSaveData(),
+        dailyReset:  dateString(),
+        weeklyReset: weekString(),
+      };
+    }
+
+    /** Convert CONFIG.quests into the runtime format (adds progress/claimed). */
+    function buildQuestSaveData() {
+      return CONFIG.quests.map(q => ({
+        ...q,
+        progress: 0,
+        claimed:  false,
+      }));
+    }
+
+    function loadSave() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return buildDefaultSave();
+        const s = JSON.parse(raw);
+        // Merge in any new quests from CONFIG that don't exist in the save yet
+        const savedIds = new Set(s.quests.map(q => q.id));
+        CONFIG.quests.forEach(q => {
+          if (!savedIds.has(q.id)) s.quests.push({ ...q, progress: 0, claimed: false });
+        });
+        return s;
+      } catch (e) {
+        return buildDefaultSave();
+      }
+    }
+
+    function saveToDisk() {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(G));
+    }
+
+    // Global save state — the single source of truth for all persistent data
+    let G = loadSave();
+    handleDailyAndWeeklyResets();
+
+
+    /* ============================================================
+       DATE HELPERS  (used for daily/weekly quest resets)
+       ============================================================ */
+
+    function dateString() {
+      const d = new Date();
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    }
+
+    function weekString() {
+      const d = new Date();
+      return `${d.getFullYear()}-W${Math.ceil(d.getDate() / 7)}-${d.getMonth()}`;
+    }
+
+    function handleDailyAndWeeklyResets() {
+      const today = dateString();
+      const week  = weekString();
+
+      if (G.dailyReset !== today) {
+        G.dailyReset = today;
+        G.quests.filter(q => q.type === 'daily').forEach(q => {
+          q.progress = 0;
+          q.claimed  = false;
+        });
+      }
+
+      if (G.weeklyReset !== week) {
+        G.weeklyReset = week;
+        G.quests.filter(q => q.type === 'weekly').forEach(q => {
+          q.progress = 0;
+          q.claimed  = false;
+        });
+      }
+    }
+
+
+    /* ============================================================
+       QUEST ENGINE
+       ============================================================ */
+
+    /**
+     * Advance any quest that listens for the given trigger.
+     * @param {string} trigger  – e.g. 'pull', 'mutation', 'legendary'
+     * @param {number} [count]  – how many to add (default 1)
+     */
+    function advanceQuests(trigger, count = 1) {
+      let newlyClaimable = false;
+
+      G.quests.forEach(quest => {
+        if (quest.claimed || quest.progress >= quest.goal) return;
+        if (quest.trigger !== trigger) return;
+
+        quest.progress = Math.min(quest.goal, quest.progress + count);
+        if (quest.progress >= quest.goal) newlyClaimable = true;
+      });
+
+      if (newlyClaimable) {
+        document.getElementById('quest-pip').classList.add('show');
+      }
+
+      saveToDisk();
+      renderQuestList();
+      renderHomeQuestStrip();
+    }
+
+    /** Claim the reward for a completed quest by its id. */
+    function claimQuest(id) {
+      const quest = G.quests.find(q => q.id === id);
+      if (!quest || quest.claimed || quest.progress < quest.goal) return;
+
+      quest.claimed      = true;
+      G.stardust        += quest.reward;
+      G.stats.questsDone++;
+
+      addXP(quest.xp);
+      logActivity(
+        `Quest Complete: ${quest.title}`,
+        `+${quest.reward} Stardust · +${quest.xp} XP`,
+        '🎯',
+        `+${quest.reward} ✦`,
+        'var(--gold)'
+      );
+
+      showToast(`✅ ${quest.title} — +${quest.reward} ✦ Stardust`);
+      saveToDisk();
+      refreshAllUI();
+    }
+
+
+    /* ============================================================
+       XP & LEVELLING
+       ============================================================ */
+
+    function addXP(amount) {
+      G.xp += amount;
+
+      while (G.xp >= G.xpMax) {
+        G.xp   -= G.xpMax;
+        G.level++;
+        G.xpMax = Math.floor(G.xpMax * CONFIG.economy.xpLevelGrowth + CONFIG.economy.xpLevelGrowthAdd);
+        showToast(`🌟 Level Up! Now Level ${G.level}`);
+      }
+    }
+
+
+    /* ============================================================
+       ACTIVITY LOG
+       ============================================================ */
+
+    function logActivity(title, sub, icon, right, rightColor = 'var(--text2)') {
+      G.activity.unshift({ title, sub, icon, right, rightColor, time: Date.now() });
+      if (G.activity.length > 20) G.activity = G.activity.slice(0, 20);
+    }
+
+
+    /* ============================================================
+       NAVIGATION
+       ============================================================ */
+
+    let currentScreen = 'home';
+
+    function goTo(screenId, navButton) {
+      if (currentScreen === screenId) return;
+
+      // Swap active screen
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(`screen-${screenId}`).classList.add('active');
+
+      // Swap active nav button
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      if (navButton) navButton.classList.add('active');
+
+      currentScreen = screenId;
+
+      // Per-screen refresh hooks
+      if (screenId === 'collection') renderCollection();
+      if (screenId === 'quests')     { renderQuestList(); document.getElementById('quest-pip').classList.remove('show'); }
+      if (screenId === 'profile')    renderProfile();
+      if (screenId === 'home')       renderHomeQuestStrip();
+    }
+
+
+    /* ============================================================
+       THREE.JS — BACKGROUND STARFIELD
+       ============================================================ */
+
+    const bgCanvas   = document.getElementById('canvas-bg');
+    const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: false, alpha: false });
+    bgRenderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    bgRenderer.setClearColor(0x04050f, 1);
+
+    const bgScene  = new THREE.Scene();
+    const bgCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
+    bgCamera.position.z = 500;
+
+    // Build the star particle cloud
+    (function buildStarfield() {
+      const { starCount, starFieldSize, starMaxSize, starMinSize } = CONFIG.background;
+      const geo      = new THREE.BufferGeometry();
+      const positions = new Float32Array(starCount * 3);
+      const sizes     = new Float32Array(starCount);
+
+      for (let i = 0; i < starCount; i++) {
+        positions[i * 3]     = (Math.random() - 0.5) * starFieldSize;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * starFieldSize;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * (starFieldSize * 0.7) - 100;
+        sizes[i]             = Math.random() * (starMaxSize - starMinSize) + starMinSize;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('size',     new THREE.BufferAttribute(sizes,     1));
+
+      const mat = new THREE.PointsMaterial({
+        color:          0xffffff,
+        sizeAttenuation:true,
+        size:           1.1,
+        transparent:    true,
+        opacity:        CONFIG.background.starOpacity,
+      });
+
+      bgScene.add(new THREE.Points(geo, mat));
+    })();
+
+    function resizeBackgroundRenderer() {
+      bgRenderer.setSize(innerWidth, innerHeight);
+      bgCamera.aspect = innerWidth / innerHeight;
+      bgCamera.updateProjectionMatrix();
+    }
+    resizeBackgroundRenderer();
+    window.addEventListener('resize', resizeBackgroundRenderer);
+
+
+    /* ============================================================
+       HERO CANVAS  (Home screen decorative starfield)
+       ============================================================ */
+
+    const heroCanvas = document.getElementById('hero-canvas');
+    const heroCtx    = heroCanvas.getContext('2d');
+
+    // Build random stars once; their alpha animates each frame
+    const heroStars = Array.from({ length: 80 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: Math.random() * 1.2 + 0.2,
+      phase: Math.random() * Math.PI * 2,  // start at a random point in the pulse cycle
+    }));
+
+    function drawHeroCanvas() {
+      heroCanvas.width  = heroCanvas.offsetWidth  || 300;
+      heroCanvas.height = heroCanvas.offsetHeight || 200;
+      heroCtx.clearRect(0, 0, heroCanvas.width, heroCanvas.height);
+
+      heroStars.forEach(star => {
+        const alpha = 0.3 + 0.7 * ((Math.sin(Date.now() * 0.001 + star.phase) + 1) / 2);
+        heroCtx.beginPath();
+        heroCtx.arc(star.x * heroCanvas.width, star.y * heroCanvas.height, star.r, 0, Math.PI * 2);
+        heroCtx.fillStyle = `rgba(180, 210, 255, ${alpha * 0.7})`;
+        heroCtx.fill();
+      });
+    }
+
+
+    /* ============================================================
+       THREE.JS — PULL STAR (the main interactive star)
+       ============================================================ */
+
+    const starCanvas   = document.getElementById('star-canvas');
+    const starRenderer = new THREE.WebGLRenderer({ canvas: starCanvas, antialias: true, alpha: true });
+    starRenderer.setPixelRatio(devicePixelRatio);
+    starRenderer.setClearColor(0, 0);
+
+    const starScene  = new THREE.Scene();
+    const starCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    starCamera.position.z = 3.2;
+
+    // ── Core icosahedron
+    const coreGeometry = new THREE.IcosahedronGeometry(
+      CONFIG.star.coreRadius,
+      CONFIG.star.coreDetail
+    );
+    const coreMaterial = new THREE.MeshStandardMaterial({
+      color:             0xffffff,
+      emissive:          0xffffff,
+      emissiveIntensity: CONFIG.star.coreEmissiveIntensity,
+      roughness:         0.2,
+      metalness:         0.5,
+    });
+    const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
+    starScene.add(coreMesh);
+
+    // ── Spiked outer shell (randomised vertex jitter)
+    const spikeGeometry = new THREE.IcosahedronGeometry(CONFIG.star.spikeRadius, 0);
+    const spikePositions = spikeGeometry.attributes.position.array;
+    for (let i = 0; i < spikePositions.length; i += 3) {
+      const jitter = 1 + Math.random() * CONFIG.star.spikeMaxJitter;
+      spikePositions[i]     *= jitter;
+      spikePositions[i + 1] *= jitter;
+      spikePositions[i + 2] *= jitter;
+    }
+    spikeGeometry.computeVertexNormals();
+
+    const spikeMaterial = new THREE.MeshStandardMaterial({
+      color:             0xffffff,
+      emissive:          0xffffff,
+      emissiveIntensity: 0.9,
+      roughness:         0.4,
+      metalness:         0.3,
+      transparent:       true,
+      opacity:           CONFIG.star.spikeOpacity,
+    });
+    const spikeMesh = new THREE.Mesh(spikeGeometry, spikeMaterial);
+    starScene.add(spikeMesh);
+
+    // ── Additive glow sprite (canvas-painted radial gradient)
+    const glowTexture = (function buildGlowTexture() {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const ctx  = c.getContext('2d');
+      const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0,   'rgba(255,255,255,0.9)');
+      grad.addColorStop(0.4, 'rgba(255,255,255,0.25)');
+      grad.addColorStop(1,   'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      return new THREE.CanvasTexture(c);
+    })();
+
+    const glowMaterial = new THREE.SpriteMaterial({
+      map:        glowTexture,
+      blending:   THREE.AdditiveBlending,
+      transparent:true,
+      opacity:    0.8,
+      color:      0xffffff,
+    });
+    const glowSprite = new THREE.Sprite(glowMaterial);
+    glowSprite.scale.set(CONFIG.star.glowSpriteScale, CONFIG.star.glowSpriteScale, 1);
+    starScene.add(glowSprite);
+
+    // ── Legendary orbit ring (particle circle)
+    const ringGeometry = new THREE.BufferGeometry();
+    const ringPositions = new Float32Array(CONFIG.star.ringParticleCount * 3);
+    for (let i = 0; i < CONFIG.star.ringParticleCount; i++) {
+      const angle = (i / CONFIG.star.ringParticleCount) * Math.PI * 2;
+      ringPositions[i * 3]     = Math.cos(angle) * CONFIG.star.ringRadius;
+      ringPositions[i * 3 + 1] = (Math.random() - 0.5) * 0.04;
+      ringPositions[i * 3 + 2] = Math.sin(angle) * CONFIG.star.ringRadius;
+    }
+    ringGeometry.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
+
+    const ringMaterial = new THREE.PointsMaterial({
+      color:       0xffd700,
+      size:        0.04,
+      transparent: true,
+      opacity:     0,
+      blending:    THREE.AdditiveBlending,
+    });
+    const ringPoints = new THREE.Points(ringGeometry, ringMaterial);
+    starScene.add(ringPoints);
+
+    // ── Lights
+    starScene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    const starKeyLight = new THREE.PointLight(0xffffff, 2.5, 10);
+    starKeyLight.position.set(1, 1, 2);
+    starScene.add(starKeyLight);
+    const starFillLight = new THREE.PointLight(0x4a9eff, 1.0, 10);
+    starFillLight.position.set(-1, -1, 1);
+    starScene.add(starFillLight);
+
+    function resizeStarRenderer() {
+      const size = document.getElementById('star-wrap').offsetWidth || 200;
+      starRenderer.setSize(size, size);
+      starCamera.aspect = 1;
+      starCamera.updateProjectionMatrix();
+    }
+
+
+    /* ============================================================
+       THREE.JS — REVEAL STAR (shown in the post-pull overlay)
+       Uses cloned geometry/material from the pull star so it
+       automatically picks up any visual tweaks you make above.
+       ============================================================ */
+
+    const revealCanvas   = document.getElementById('reveal-canvas');
+    const revealRenderer = new THREE.WebGLRenderer({ canvas: revealCanvas, antialias: true, alpha: true });
+    revealRenderer.setPixelRatio(devicePixelRatio);
+    revealRenderer.setClearColor(0, 0);
+
+    const revealScene  = new THREE.Scene();
+    const revealCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    revealCamera.position.z = 3.2;
+
+    const revealCore  = new THREE.Mesh(coreGeometry.clone(),  coreMaterial.clone());
+    const revealSpike = new THREE.Mesh(spikeGeometry.clone(), spikeMaterial.clone());
+    const revealGlow  = new THREE.Sprite(glowMaterial.clone());
+    revealGlow.scale.set(2.8, 2.8, 1);
+
+    revealScene.add(revealCore, revealSpike, revealGlow);
+    revealScene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    const revealKeyLight = new THREE.PointLight(0xffffff, 2.5, 10);
+    revealKeyLight.position.set(1, 1, 2);
+    revealScene.add(revealKeyLight);
+
+    function resizeRevealRenderer() {
+      const size = revealCanvas.parentElement.offsetWidth || 240;
+      revealRenderer.setSize(size, size);
+      revealCamera.aspect = 1;
+      revealCamera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', () => { resizeStarRenderer(); resizeRevealRenderer(); });
+    setTimeout(() => { resizeStarRenderer(); resizeRevealRenderer(); }, 120);
+
+
+    /* ============================================================
+       COLOUR SYSTEM
+       Lerps the star colour smoothly whenever the tier changes.
+       ============================================================ */
+
+    let currentStarColor = new THREE.Color(TIER_MAP[TIER_NAMES[0]].color);
+    let targetStarColor  = new THREE.Color(TIER_MAP[TIER_NAMES[0]].color);
+    let colorLerpT       = 1;      // 0 = start of lerp, 1 = complete
+    let rainbowActive    = false;
+    let rainbowHue       = 0;      // Accumulates over time when rainbow is active
+
+    /**
+     * Begin a colour transition to the given tier.
+     * @param {string}  tierName
+     * @param {boolean} [instant]  – if true, skip the lerp animation
+     */
+    function setStarColorToTier(tierName, instant = false) {
+      const tier = TIER_MAP[tierName];
+      targetStarColor.set(tier.color);
+      if (instant) {
+        currentStarColor.copy(targetStarColor);
+        colorLerpT = 1;
+      } else {
+        colorLerpT = 0;
+      }
+      rainbowActive = tier.rainbow || false;
+    }
+
+    /** Push the current colour to all star materials (pull + reveal). */
+    function applyColorToStar(color) {
+      coreMaterial.emissive.copy(color);
+      coreMaterial.color.copy(color);
+      spikeMaterial.emissive.copy(color);
+      spikeMaterial.color.copy(color);
+      glowMaterial.color.copy(color);
+    }
+
+
+    /* ============================================================
+       PULL STATE MACHINE
+       ============================================================ */
+
+    let pullState = buildFreshPullState();
+    let revealOpen  = false;
+    let revealRotT  = 0;
+
+    function buildFreshPullState() {
+      return {
+        tierIndex: 0,                 // Index into TIER_NAMES
+        taps:      0,
+        mutations: [],                // Mutation names collected so far
+        locked:    false,             // True once the reveal is triggered
+      };
+    }
+
+    /** Convenience getter for the current tier object. */
+    function currentTier() {
+      return CONFIG.tiers[pullState.tierIndex];
+    }
+
+    /**
+     * Handle a tap on the star.
+     * Rolls for upgrade and mutation, updates VFX, and checks for reveal.
+     */
+    function handleStarTap() {
+      if (pullState.locked) return;
+      if (pullState.taps >= CONFIG.pull.totalTaps) return;
+
+      // Charge stardust on the first tap
+      if (pullState.taps === 0) {
+        if (G.stardust < CONFIG.pull.cost) {
+          showToast('❌ Not enough Stardust!');
+          return;
+        }
+        G.stardust -= CONFIG.pull.cost;
+      }
+
+      pullState.taps++;
+      updatePipDisplay();
+
+      // ── Mutation roll
+      let rolledMutation = null;
+      if (Math.random() < CONFIG.pull.mutationChance) {
+        const available = CONFIG.mutations
+          .map(m => m.name)
+          .filter(n => !pullState.mutations.includes(n));
+
+        if (available.length) {
+          rolledMutation = available[Math.floor(Math.random() * available.length)];
+          pullState.mutations.push(rolledMutation);
+          vfx.flicker = 1;
+        }
+      }
+
+      // ── Upgrade roll (can't upgrade past the final tier)
+      const tier          = currentTier();
+      const canUpgrade    = pullState.tierIndex < TIER_NAMES.length - 1;
+      const didUpgrade    = canUpgrade && Math.random() < tier.upgradeChance;
+
+      if (didUpgrade) {
+        pullState.tierIndex++;
+        setStarColorToTier(currentTier().name);
+        triggerCrackVFX();
+        triggerFlashVFX(currentTier().color + '44', 80);
+        triggerHaptic([15, 10, 30]);
+      } else {
+        triggerScreenShake();
+        triggerHaptic([10]);
+      }
+
+      vfx.pulse = 1;
+      updateTierLabelDisplay();
+
+      // Show the mutation badge after a short delay
+      if (rolledMutation) {
+        setTimeout(() => addMutationBadgeToDOM(rolledMutation), 300);
+      }
+
+      // ── Check for reveal condition
+      const isLegendary = currentTier().name === 'Legendary';
+      const isLastTap   = pullState.taps >= CONFIG.pull.totalTaps;
+
+      if (isLegendary || isLastTap) {
+        pullState.locked = true;
+        document.getElementById('star-wrap').classList.add('disabled');
+        document.getElementById('tap-hint').textContent = '✦';
+        setTimeout(beginRevealSequence, isLegendary ? 600 : 400);
+      } else {
+        const remaining = CONFIG.pull.totalTaps - pullState.taps;
+        document.getElementById('tap-hint').textContent =
+          `${remaining} tap${remaining !== 1 ? 's' : ''} remaining`;
+      }
+    }
+
+    /** Reset the pull screen to its initial state. */
+    function resetPull() {
+      pullState  = buildFreshPullState();
+      revealOpen = false;
+      rainbowActive = false;
+
+      setStarColorToTier(TIER_NAMES[0], true);
+      updatePipDisplay();
+
+      document.getElementById('tier-label').style.opacity = '0';
+      document.getElementById('mutations-row').innerHTML  = '';
+      document.getElementById('tap-hint').textContent     = 'Tap to begin';
+      document.getElementById('tap-hint').style.opacity   = '1';
+      document.getElementById('star-wrap').classList.remove('disabled');
+      document.getElementById('pull-reset-btn').classList.remove('show');
+
+      ringMaterial.opacity = 0;
+      vfx.pulse   = 0;
+      vfx.flicker = 0;
+    }
+
+
+    /* ============================================================
+       REVEAL SEQUENCE
+       White-out flash → overlay card with spinning star
+       ============================================================ */
+
+    function beginRevealSequence() {
+      triggerHaptic([30, 20, 60]);
+
+      // Flash to white, then show the overlay card while still white
+      const flash = document.getElementById('flash');
+      flash.style.transition = 'none';
+      flash.style.background = 'white';
+      flash.style.opacity    = '0';
+
+      setTimeout(() => {
+        flash.style.transition = 'opacity 0.15s ease-in';
+        flash.style.opacity    = '1';
+
+        setTimeout(() => {
+          openRevealCard();
+          flash.style.transition = 'opacity 1s ease-out';
+          flash.style.opacity    = '0';
+        }, 200);
+      }, 40);
+    }
+
+    function openRevealCard() {
+      const tier      = currentTier();
+      const threeColor = new THREE.Color(tier.color);
+
+      // Apply tier colour to the reveal star
+      revealCore.material.emissive.copy(threeColor);
+      revealCore.material.color.copy(threeColor);
+      revealSpike.material.emissive.copy(threeColor);
+      revealSpike.material.color.copy(threeColor);
+      revealGlow.material.color.copy(threeColor);
+
+      // Tier label
+      const tierTextEl = document.getElementById('reveal-tier-text');
+      tierTextEl.textContent    = tier.name;
+      tierTextEl.style.color    = tier.color;
+      tierTextEl.style.cssText += `
+        color: ${tier.color};
+        text-shadow: 0 0 30px rgba(${tier.glowRgb},0.7), 0 0 60px rgba(${tier.glowRgb},0.3);
+      `;
+
+      // Mutation badges
+      document.getElementById('reveal-muts').innerHTML =
+        pullState.mutations.map(mutName => {
+          const mut = MUT_MAP[mutName];
+          return `<div class="tier-badge mut-${mutName}" style="color:${mut.color}; border-color:${mut.color}; background:${mut.color}18;">
+            ⬡ ${mutName}
+          </div>`;
+        }).join('');
+
+      document.getElementById('reveal-overlay').classList.add('open');
+      revealOpen = true;
+      revealRotT = 0;
+
+      resizeRevealRenderer();
+    }
+
+    /** Called when the player taps "Add to Collection". */
+    function closeReveal() {
+      const tier = currentTier();
+
+      // Persist the new star
+      const newStar = {
+        id:        G.nextId++,
+        tier:      tier.name,
+        mutations: [...pullState.mutations],
+        date:      new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        timestamp: Date.now(),
+      };
+      G.collection.push(newStar);
+
+      // Update stats
+      G.stats.total++;
+      const tierKey = tier.name.toLowerCase();
+      G.stats[tierKey] = (G.stats[tierKey] || 0) + 1;
+      G.stats.mutations += pullState.mutations.length;
+
+      // Quest advancement
+      advanceQuests('pull');
+      if (pullState.mutations.length) advanceQuests('mutation', pullState.mutations.length);
+      if (tier.name === 'Legendary')  advanceQuests('legendary');
+      if (['Epic','Legendary'].includes(tier.name)) advanceQuests('epic_plus');
+      if (['Rare','Epic','Legendary'].includes(tier.name)) advanceQuests('rare_plus');
+
+      // Economy rewards
+      const dustBonus = tier.dustReward + pullState.mutations.length * CONFIG.economy.dustPerMutation;
+      const xpBonus   = tier.xpReward   + pullState.mutations.length * CONFIG.economy.xpPerMutation;
+      G.stardust += dustBonus;
+      addXP(xpBonus);
+
+      // Activity log entry
+      const mutStr = pullState.mutations.length ? ` · ${pullState.mutations.join(', ')}` : '';
+      logActivity(
+        `${tier.name} Star #${newStar.id}`,
+        `${tier.name}${mutStr}`,
+        tier.emoji,
+        `+${dustBonus} ✦`,
+        tier.color
+      );
+
+      saveToDisk();
+      refreshAllUI();
+
+      // Close overlay and show reset button
+      document.getElementById('reveal-overlay').classList.remove('open');
+      revealOpen = false;
+      document.getElementById('pull-reset-btn').classList.add('show');
+
+      showToast(`${tier.emoji} ${tier.name} Star added to collection!`);
+    }
+
+
+    /* ============================================================
+       PULL SCREEN — DOM HELPERS
+       ============================================================ */
+
+    function updatePipDisplay() {
+      for (let i = 0; i < CONFIG.pull.totalTaps; i++) {
+        document.getElementById(`pip${i}`).classList.toggle('used', i < pullState.taps);
+      }
+    }
+
+    function updateTierLabelDisplay() {
+      const tier  = currentTier();
+      const label = document.getElementById('tier-label');
+      label.textContent = tier.name;
+      label.style.color = tier.color;
+      label.style.textShadow = `0 0 20px rgba(${tier.glowRgb},0.6)`;
+      label.style.opacity    = pullState.taps > 0 ? '1' : '0';
+    }
+
+    function addMutationBadgeToDOM(mutName) {
+      const mut  = MUT_MAP[mutName];
+      const el   = document.createElement('div');
+      el.className = `mut-badge mut-${mutName}`;
+      el.style.cssText = `color:${mut.color}; border-color:${mut.color}; background:${mut.color}18;`;
+      el.textContent   = `⬡ ${mutName}`;
+      document.getElementById('mutations-row').appendChild(el);
+      // Trigger fade-in on next frame
+      requestAnimationFrame(() => el.classList.add('show'));
+    }
+
+    // Wire up tap events (both mouse and touch)
+    document.getElementById('star-wrap').addEventListener('click', handleStarTap);
+    document.getElementById('star-wrap').addEventListener('touchstart', e => {
+      e.preventDefault();
+      handleStarTap();
+    }, { passive: false });
+
+
+    /* ============================================================
+       VFX HELPERS
+       ============================================================ */
+
+    // Tracks active VFX timers (0 = inactive, >0 = in progress)
+    const vfx = {
+      pulse:   0,   // Tap pulse scale/glow burst
+      flicker: 0,   // Mutation hint flicker on the spike shell
+      floatT:  0,   // Accumulates time for the idle float animation
+    };
+
+    function triggerScreenShake() {
+      const arena = document.getElementById('pull-arena');
+      arena.classList.add('shake');
+      setTimeout(() => arena.classList.remove('shake'), 420);
+    }
+
+    function triggerFlashVFX(color, durationMs) {
+      const el = document.getElementById('flash');
+      el.style.transition = 'none';
+      el.style.background = color;
+      el.style.opacity    = '0.6';
+      setTimeout(() => {
+        el.style.transition = `opacity ${durationMs * 3}ms`;
+        el.style.opacity    = '0';
+      }, durationMs);
+    }
+
+    function triggerCrackVFX() {
+      // Generate a random crack path from a centre point
+      function randomCrackPath(cx, cy) {
+        let d = `M${cx},${cy}`;
+        let x = cx, y = cy;
+        for (let i = 0; i < 4; i++) {
+          x += (Math.random() - 0.5) * 50;
+          y += (Math.random() - 0.5) * 50;
+          d += ` L${x},${y}`;
+        }
+        return d;
+      }
+
+      document.getElementById('crack1').setAttribute('d', randomCrackPath(100, 100));
+      document.getElementById('crack2').setAttribute('d', randomCrackPath(80,  110));
+      document.getElementById('crack3').setAttribute('d', randomCrackPath(115,  90));
+
+      const svg = document.getElementById('crack-svg');
+      svg.classList.add('show');
+      setTimeout(() => svg.classList.remove('show'), 600);
+    }
+
+    function triggerHaptic(pattern = [10]) {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    }
+
+
+    /* ============================================================
+       COLLECTION SCREEN
+       ============================================================ */
+
+    let activeCollectionFilter = 'All';
+
+    function setFilter(filterName, chipElement) {
+      activeCollectionFilter = filterName;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chipElement.classList.add('active');
+      renderCollection();
+    }
+
+    function renderCollection() {
+      const sortMode = document.getElementById('sort-select').value;
+
+      // Filter
+      let items = [...G.collection];
+      if (activeCollectionFilter !== 'All') {
+        items = items.filter(star => star.tier === activeCollectionFilter);
+      }
+
+      // Sort
+      const tierOrder = Object.fromEntries(TIER_NAMES.map((n, i) => [n, i]));
+      switch (sortMode) {
+        case 'tier':       items.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]); break;
+        case 'tier-desc':  items.sort((a, b) => tierOrder[b.tier] - tierOrder[a.tier]); break;
+        case 'mutations':  items.sort((a, b) => b.mutations.length - a.mutations.length); break;
+        default:           items.sort((a, b) => b.timestamp - a.timestamp); break;  // newest
+      }
+
+      // Update count label and stardust display
+      document.getElementById('coll-count').textContent = `${items.length} star${items.length !== 1 ? 's' : ''}`;
+      document.getElementById('coll-dust').textContent  = G.stardust;
+
+      const grid = document.getElementById('stars-grid');
+
+      if (!items.length) {
+        grid.innerHTML = `
+          <div style="grid-column:1/-1">
+            <div class="empty-collection">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+              <p>No stars found.<br>Do a pull to grow your collection!</p>
+            </div>
+          </div>`;
+        return;
+      }
+
+      grid.innerHTML = items.map(star => {
+        const tier    = TIER_MAP[star.tier];
+        const mutDots = star.mutations.map(mutName => {
+          const mut = MUT_MAP[mutName];
+          return `<div class="star-card-mut-dot" style="background:${mut.dotColor};"></div>`;
+        }).join('');
+
+        return `
+          <div class="star-card ${star.tier.toLowerCase()}-card" onclick="openStarModal(${star.id})">
+            <div class="star-card-art" style="background:${tier.cardGradient};">
+              <div class="star-card-glow" style="background:radial-gradient(circle, ${tier.color}55, transparent 70%);"></div>
+              <div class="star-card-emoji" style="color:${tier.color};">${tier.emoji}</div>
+            </div>
+            <div class="star-card-info">
+              <div class="star-card-num"  style="color:${tier.color}60;">#${String(star.id).padStart(3,'0')}</div>
+              <div class="star-card-tier" style="color:${tier.color};">${star.tier}</div>
+              <div class="star-card-muts">${mutDots}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function openStarModal(starId) {
+      const star = G.collection.find(s => s.id === starId);
+      if (!star) return;
+
+      const tier = TIER_MAP[star.tier];
+
+      document.getElementById('modal-art').innerHTML =
+        `<div style="color:${tier.color}; font-size:2.5rem; filter:drop-shadow(0 0 12px ${tier.color});">${tier.emoji}</div>`;
+      document.getElementById('modal-art').style.borderColor = tier.color + '40';
+      document.getElementById('modal-title').textContent     = `Star #${String(star.id).padStart(3, '0')}`;
+      document.getElementById('modal-title').style.color     = tier.color;
+      document.getElementById('modal-sub').textContent =
+        `${star.tier}${star.mutations.length ? ` · ${star.mutations.join(', ')}` : ' · No Mutations'}`;
+
+      document.getElementById('modal-stat-tier').textContent  = star.tier;
+      document.getElementById('modal-stat-tier').style.color  = tier.color;
+      document.getElementById('modal-stat-id').textContent    = `#${String(star.id).padStart(3, '0')}`;
+      document.getElementById('modal-stat-muts').textContent  = star.mutations.length || 'None';
+      document.getElementById('modal-stat-date').textContent  = star.date || 'Today';
+
+      document.getElementById('modal-muts-row').innerHTML = star.mutations.map(mutName => {
+        const mut = MUT_MAP[mutName];
+        return `<div class="tier-badge mut-${mutName}" style="color:${mut.color}; border-color:${mut.color}; background:${mut.color}18;">
+          ⬡ ${mutName}
+        </div>`;
+      }).join('');
+
+      document.getElementById('star-modal').classList.add('open');
+    }
+
+    function closeStarModal() {
+      document.getElementById('star-modal').classList.remove('open');
+    }
+
+
+    /* ============================================================
+       QUESTS SCREEN
+       ============================================================ */
+
+    let activeQuestTab = 'daily';
+
+    function setQuestTab(tab, tabElement) {
+      activeQuestTab = tab;
+      document.querySelectorAll('.quest-tab').forEach(t => t.classList.remove('active'));
+      tabElement.classList.add('active');
+      renderQuestList();
+    }
+
+    function renderQuestList() {
+      // XP bar
+      const xpPct = Math.min(100, (G.xp / G.xpMax) * 100);
+      document.getElementById('xp-level-num').textContent = G.level;
+      document.getElementById('xp-curr').textContent      = G.xp;
+      document.getElementById('xp-max').textContent       = G.xpMax;
+      document.getElementById('xp-bar-fill').style.width  = xpPct + '%';
+
+      // Quest cards for the active tab
+      const quests = G.quests.filter(q => q.type === activeQuestTab);
+
+      document.getElementById('quests-list').innerHTML = quests.map(quest => {
+        const pct       = Math.min(100, (quest.progress / quest.goal) * 100);
+        const done      = quest.progress >= quest.goal;
+        const claimed   = quest.claimed;
+        const barColor  = claimed ? 'var(--green)' : 'var(--accent)';
+
+        return `
+          <div class="quest-item ${claimed ? 'completed' : done ? 'claimable' : ''}"
+               ${done && !claimed ? `onclick="claimQuest('${quest.id}')"` : ''}>
+            ${claimed ? `<div class="quest-badge-complete">✓ Claimed</div>` : ''}
+            <div class="quest-header">
+              <div class="quest-icon">${quest.icon}</div>
+              <div class="quest-info">
+                <div class="quest-title">${quest.title}</div>
+                <div class="quest-desc">${quest.desc}</div>
+                <div class="quest-reward">✦ ${quest.reward} Stardust · ${quest.xp} XP</div>
+              </div>
+            </div>
+            <div class="quest-progress-wrap">
+              <div class="quest-prog-bar">
+                <div class="quest-prog-fill" style="width:${pct}%; background:${barColor};"></div>
+              </div>
+              <div class="quest-prog-text">
+                <span class="quest-prog-nums">${quest.progress} / ${quest.goal}</span>
+                <span class="quest-prog-pct">${Math.round(pct)}%</span>
+              </div>
+            </div>
+            ${done && !claimed ? `<button class="claim-btn">Claim Reward</button>` : ''}
+          </div>`;
+      }).join('');
+
+      // Notification dot
+      const hasClaimable = G.quests.some(q => q.progress >= q.goal && !q.claimed);
+      document.getElementById('quest-pip').classList.toggle('show', hasClaimable);
+    }
+
+    /** Render the horizontal mini-strip on the Home screen. */
+    function renderHomeQuestStrip() {
+      const strip  = document.getElementById('home-quest-strip');
+      const active = G.quests.filter(q => !q.claimed && q.type !== 'lifetime').slice(0, 5);
+
+      if (!active.length) {
+        strip.innerHTML = `<div style="font-size:0.72rem; color:var(--text3); padding:8px 4px;">All quests claimed!</div>`;
+        return;
+      }
+
+      strip.innerHTML = active.map(quest => {
+        const pct = Math.min(100, (quest.progress / quest.goal) * 100);
+        return `
+          <div class="quest-mini" onclick="goTo('quests', document.querySelector('[data-screen=quests]'))">
+            <div class="quest-mini-title">${quest.icon} ${quest.title}</div>
+            <div class="quest-mini-bar">
+              <div class="quest-mini-fill" style="width:${pct}%;"></div>
+            </div>
+            <div class="quest-mini-prog">${quest.progress}/${quest.goal}</div>
+            <div class="quest-mini-reward">✦ ${quest.reward}</div>
+          </div>`;
+      }).join('');
+    }
+
+
+    /* ============================================================
+       PROFILE SCREEN
+       ============================================================ */
+
+    function renderProfile() {
+      const level   = G.level;
+      const title   = level < 5  ? 'Explorer'
+                    : level < 10 ? 'Seeker'
+                    : level < 20 ? 'Astral Walker'
+                    :              'Star Master';
+
+      document.getElementById('profile-name-display').textContent = 'Starseeker';
+      document.getElementById('profile-since').innerHTML          = `${title} · Level <span id="profile-level">${level}</span>`;
+      document.getElementById('profile-dust-big').textContent     = G.stardust;
+
+      document.getElementById('ps-total').textContent  = G.stats.total    || 0;
+      document.getElementById('ps-leg').textContent    = G.stats.legendary|| 0;
+      document.getElementById('ps-mut').textContent    = G.stats.mutations|| 0;
+      document.getElementById('ps-epic').textContent   = G.stats.epic     || 0;
+      document.getElementById('ps-rare').textContent   = G.stats.rare     || 0;
+      document.getElementById('ps-quests').textContent = G.stats.questsDone||0;
+
+      document.getElementById('achievement-list').innerHTML =
+        CONFIG.achievements.map(achievement => {
+          const unlocked = achievement.condition(G);
+          return `
+            <div class="achievement-item ${unlocked ? 'unlocked' : ''}">
+              <div class="achievement-icon">${unlocked ? achievement.icon : '🔒'}</div>
+              <div class="achievement-info">
+                <div class="achievement-name" style="${unlocked ? 'color:var(--gold)' : ''}">${achievement.name}</div>
+                <div class="achievement-desc">${achievement.desc}</div>
+              </div>
+              ${unlocked
+                ? `<div style="font-size:0.7rem; color:var(--gold);">✓</div>`
+                : `<div class="achievement-lock">Locked</div>`}
+            </div>`;
+        }).join('');
+    }
+
+
+    /* ============================================================
+       GLOBAL UI REFRESH
+       Called after any save-state change to keep all screens in sync.
+       ============================================================ */
+
+    function refreshAllUI() {
+      document.getElementById('stat-total').textContent     = G.stats.total     || 0;
+      document.getElementById('stat-legendary').textContent = G.stats.legendary  || 0;
+      document.getElementById('stat-dust').textContent      = G.stardust;
+      document.getElementById('coll-dust').textContent      = G.stardust;
+      document.getElementById('profile-dust-big').textContent = G.stardust;
+
+      renderActivityFeed();
+      renderHomeQuestStrip();
+
+      const xpPct = Math.min(100, (G.xp / G.xpMax) * 100);
+      document.getElementById('xp-bar-fill').style.width  = xpPct + '%';
+      document.getElementById('xp-level-num').textContent = G.level;
+    }
+
+    function renderActivityFeed() {
+      const list = document.getElementById('activity-list');
+
+      if (!G.activity.length) {
+        list.innerHTML = `
+          <div class="activity-item" style="opacity:0.4; justify-content:center;">
+            <span style="font-size:0.75rem; color:var(--text3); letter-spacing:0.1em;">
+              No activity yet — do your first pull!
+            </span>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = G.activity.slice(0, 6).map(entry => `
+        <div class="activity-item">
+          <div class="activity-icon" style="background:var(--surface2);">${entry.icon}</div>
+          <div class="activity-info">
+            <div class="activity-title">${entry.title}</div>
+            <div class="activity-sub">${entry.sub}</div>
+          </div>
+          <div class="activity-right" style="color:${entry.rightColor}">${entry.right}</div>
+        </div>`).join('');
+    }
+
+
+    /* ============================================================
+       TOAST
+       ============================================================ */
+
+    let toastTimer = null;
+
+    function showToast(message) {
+      document.getElementById('toast-msg').textContent = message;
+      document.getElementById('toast').classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => document.getElementById('toast').classList.remove('show'), 2800);
+    }
+
+
+    /* ============================================================
+       MAIN ANIMATION LOOP
+       ============================================================ */
+
+    let lastFrameTime = 0;
+
+    function animate(timestamp) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((timestamp - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = timestamp;
+
+      // ── Background starfield slow camera drift
+      bgCamera.position.x = Math.sin(timestamp * CONFIG.background.driftSpeedX) * CONFIG.background.driftAmplitudeX;
+      bgCamera.position.y = Math.cos(timestamp * CONFIG.background.driftSpeedY) * CONFIG.background.driftAmplitudeY;
+      bgRenderer.render(bgScene, bgCamera);
+
+      // ── Hero canvas star twinkle
+      drawHeroCanvas();
+
+      // ── Colour lerp
+      if (colorLerpT < 1) {
+        colorLerpT = Math.min(1, colorLerpT + dt * 2.5);
+        currentStarColor.lerp(targetStarColor, colorLerpT);
+      }
+
+      // ── Rainbow / standard colour application
+      if (rainbowActive) {
+        rainbowHue += dt * CONFIG.star.rainbowCycleSpeed;
+        const hueColor = new THREE.Color().setHSL(rainbowHue % 1, 1, 0.62);
+        applyColorToStar(hueColor);
+        ringMaterial.color.copy(hueColor);
+        ringMaterial.opacity = Math.min(1, ringMaterial.opacity + dt * 2);
+        ringPoints.rotation.y += dt * CONFIG.star.ringRotationSpeed;
+        starKeyLight.color.copy(hueColor);
+      } else {
+        applyColorToStar(currentStarColor);
+        ringMaterial.opacity = Math.max(0, ringMaterial.opacity - dt * 3);
+        starKeyLight.color.set(0xffffff);
+      }
+
+      // ── Idle float animation
+      vfx.floatT += dt;
+      const floatY = Math.sin(vfx.floatT * CONFIG.star.floatSpeed) * CONFIG.star.floatAmplitude;
+      coreMesh.position.y  = floatY;
+      spikeMesh.position.y = floatY;
+      coreMesh.rotation.y  += dt * (CONFIG.star.rotationBaseSpeed + Math.sin(vfx.floatT * 0.4) * 0.001);
+      coreMesh.rotation.x   = Math.sin(vfx.floatT * 0.35) * 0.07;
+      spikeMesh.rotation.y  = coreMesh.rotation.y * 0.65;
+      spikeMesh.rotation.x  = coreMesh.rotation.x * 0.5;
+
+      // ── Pulse VFX (triggered on every tap)
+      if (vfx.pulse > 0) {
+        vfx.pulse = Math.max(0, vfx.pulse - dt * CONFIG.star.pulseDecayRate);
+        const p = Math.sin(vfx.pulse * Math.PI);
+        coreMesh.scale.setScalar(1 + p * CONFIG.star.pulseScaleBoost);
+        spikeMesh.scale.setScalar(1 + p * CONFIG.star.pulseScaleBoost * 0.85);
+        glowSprite.scale.setScalar(CONFIG.star.glowSpriteScale + p * 1.1);
+        coreMaterial.emissiveIntensity = CONFIG.star.coreEmissiveIntensity + p * CONFIG.star.pulseEmissiveBoost;
+      } else {
+        coreMesh.scale.setScalar(1);
+        spikeMesh.scale.setScalar(1);
+        glowSprite.scale.setScalar(CONFIG.star.glowSpriteScale);
+        coreMaterial.emissiveIntensity = CONFIG.star.coreEmissiveIntensity;
+      }
+
+      // ── Flicker VFX (triggered on mutation roll)
+      if (vfx.flicker > 0) {
+        vfx.flicker = Math.max(0, vfx.flicker - dt * CONFIG.star.flickerDecayRate);
+        const f = Math.sin(vfx.flicker * Math.PI * CONFIG.star.flickerFrequency) * 0.5 + 0.5;
+        spikeMaterial.opacity           = CONFIG.star.spikeOpacity + f * 0.45;
+        spikeMaterial.emissiveIntensity = 0.9 + f * 1.4;
+      } else {
+        spikeMaterial.opacity           = CONFIG.star.spikeOpacity;
+        spikeMaterial.emissiveIntensity = 0.9;
+      }
+
+      // ── Render pull star
+      starRenderer.render(starScene, starCamera);
+
+      // ── Reveal star animation
+      if (revealOpen) {
+        revealRotT += dt;
+
+        // Apply rainbow to reveal star too
+        if (rainbowActive) {
+          const hueColor = new THREE.Color().setHSL(rainbowHue % 1, 1, 0.62);
+          revealCore.material.emissive.copy(hueColor);
+          revealCore.material.color.copy(hueColor);
+          revealSpike.material.emissive.copy(hueColor);
+          revealSpike.material.color.copy(hueColor);
+          revealGlow.material.color.copy(hueColor);
+        }
+
+        revealCore.rotation.y  += dt * 0.018;
+        revealCore.rotation.x   = Math.sin(revealRotT * 0.5) * 0.1;
+        revealSpike.rotation.y  = revealCore.rotation.y * 0.6;
+        revealSpike.rotation.x  = revealCore.rotation.x * 0.5;
+        revealCore.position.y   = Math.sin(revealRotT * 0.7) * 0.05;
+        revealSpike.position.y  = revealCore.position.y;
+
+        revealRenderer.render(revealScene, revealCamera);
+      }
+    }
+
+    requestAnimationFrame(animate);
+
+
+    /* ============================================================
+       INITIALISE
+       ============================================================ */
+
+    setStarColorToTier(TIER_NAMES[0], true);
+    setTimeout(() => { resizeStarRenderer(); resizeRevealRenderer(); }, 120);
+    refreshAllUI();
+    renderHomeQuestStrip();
+    renderActivityFeed();
+
+    // Show quest notification dot if there are claimable quests from a previous session
+    if (G.quests.some(q => q.progress >= q.goal && !q.claimed)) {
+      document.getElementById('quest-pip').classList.add('show');
+    }
+
+    // Expose closeReveal globally so the reveal button's onclick attribute can reach it
+    window.closeReveal     = closeReveal;
+    window.resetPull       = resetPull;
+    window.goTo            = goTo;
+    window.setFilter       = setFilter;
+    window.setQuestTab     = setQuestTab;
+    window.claimQuest      = claimQuest;
+    window.openStarModal   = openStarModal;
+    window.closeStarModal  = closeStarModal;
+
+  </script>
+</body>
+</html>
